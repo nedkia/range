@@ -1,0 +1,93 @@
+diff --git a/docker-compose.yml b/docker-compose.yml
+index a7ce609..e314466 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -96,6 +96,10 @@ services:
+     build:
+       context: ./ranger-api
+       dockerfile: Dockerfile
++      args:
++        HTTP_PROXY: http://foo.bar.com:3128
++        HTTPS_PROXY: http://foo.bar.com:3128
++        NO_PROXY: localhost,127.0.0.1
+     env_file:
+       - .env
+     container_name: ranger
+diff --git a/integrations/ghosts/ghosts-mcp/Dockerfile b/integrations/ghosts/ghosts-mcp/Dockerfile
+index 7b3f32c..1edb04a 100644
+--- a/integrations/ghosts/ghosts-mcp/Dockerfile
++++ b/integrations/ghosts/ghosts-mcp/Dockerfile
+@@ -1,5 +1,9 @@
+ FROM python:3.11-slim
+ 
++ARG HTTP_PROXY
++ARG HTTPS_PROXY
++ARG NO_PROXY
++
+ WORKDIR /app
+ 
+ COPY requirements.txt .
+diff --git a/ranger-api/Dockerfile b/ranger-api/Dockerfile
+index d3445b0..80f4294 100644
+--- a/ranger-api/Dockerfile
++++ b/ranger-api/Dockerfile
+@@ -1,6 +1,9 @@
+ # multi-stage target: dev
+ FROM mcr.microsoft.com/dotnet/sdk:9.0 AS dev
+ ARG TARGETARCH
++ARG HTTP_PROXY
++ARG HTTPS_PROXY
++ARG NO_PROXY
+ 
+ COPY . /app
+ WORKDIR /app
+diff --git a/ranger-appliance/setup-appliance.sh b/ranger-appliance/setup-appliance.sh
+index 89f5bff..ad0adb2 100644
+--- a/ranger-appliance/setup-appliance.sh
++++ b/ranger-appliance/setup-appliance.sh
+@@ -3,6 +3,18 @@
+ # Exit on errors
+ set -euo pipefail
+ 
++# Proxy configuration
++PROXY_URL="http://foo.bar.com:3128"
++export http_proxy="${PROXY_URL}"
++export https_proxy="${PROXY_URL}"
++export HTTP_PROXY="${PROXY_URL}"
++export HTTPS_PROXY="${PROXY_URL}"
++export no_proxy="localhost,127.0.0.1"
++
++# Configure apt proxy so sudo apt-get picks it up
++echo "Acquire::http::Proxy \"${PROXY_URL}\";" | sudo tee /etc/apt/apt.conf.d/01proxy > /dev/null
++echo "Acquire::https::Proxy \"${PROXY_URL}\";" | sudo tee -a /etc/apt/apt.conf.d/01proxy > /dev/null
++
+ echo "$APPLIANCE_VERSION" >/etc/appliance_version
+ 
+ # Customize MOTD and other text for the appliance
+@@ -78,7 +90,7 @@ for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker c
+ sudo apt-get update
+ sudo apt-get install -y ca-certificates curl
+ sudo install -m 0755 -d /etc/apt/keyrings
+-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
++sudo curl -fsSL -x "${PROXY_URL}" https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+ sudo chmod a+r /etc/apt/keyrings/docker.asc
+ 
+ # Add the repository to Apt sources:
+@@ -96,5 +108,16 @@ IP=$(hostname -I | awk '{print $1}')
+ sed -i "s|BASEROW_PUBLIC_URL=.*|BASEROW_PUBLIC_URL=http://${IP}:8081|g" docker-compose.yml
+ sed -i "s|BASEROW_EXTRA_ALLOWED_HOSTS=.*|BASEROW_EXTRA_ALLOWED_HOSTS=${IP},localhost,127.0.0.1|g" docker-compose.yml
+ 
++# Configure Docker daemon proxy so it can pull images through the proxy
++sudo mkdir -p /etc/systemd/system/docker.service.d
++sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf > /dev/null <<'DOCKER_PROXY_EOF'
++[Service]
++Environment="HTTP_PROXY=http://foo.bar.com:3128"
++Environment="HTTPS_PROXY=http://foo.bar.com:3128"
++Environment="NO_PROXY=localhost,127.0.0.1"
++DOCKER_PROXY_EOF
++sudo systemctl daemon-reload
++sudo systemctl restart docker
++
+ echo "Starting docker compose..."
+ sudo docker compose up -d
+\ No newline at end of file
