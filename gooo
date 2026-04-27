@@ -1,0 +1,11 @@
+# Ollama - running on the host, accessible from Docker containers via host.docker.internal
+OLLAMA_HOST=http://host.docker.internal:11434
+
+# n8n - reachable by container name since it's on the same Docker network (ranger-net)
+N8N_API_URL=http://n8n:5678
+
+# Generate this from the n8n UI: Settings > API > Create an API Key
+N8N_API_KEY=
+
+# GHOSTS NPC framework host (optional, only needed if using GHOSTS integration)
+GHOSTS_HOST=http://host.docker.internal:5000
